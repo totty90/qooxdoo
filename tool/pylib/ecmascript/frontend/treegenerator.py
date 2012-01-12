@@ -63,6 +63,12 @@ class TokenStream(object):
         self.commentsBefore = []
         self.parsepos = -1
         self.eolBefore = False
+        self.eolBefore = False
+        self.breakBefore = False
+        self.parsepos += 1
+        self._curr     = self.tokens[self.parsepos]
+        token          = self._curr
+
 
     def curr (self):
         """Returns the current token."""
@@ -143,6 +149,11 @@ class TokenStream(object):
             # Special treatment of comments
             #
             elif token["type"] == "comment":
+                if item:
+                    commentNode = createCommentNode(token)
+                    item.addChild(commentNode)
+
+            elif 0 and token["type"] == "comment":
                 # After current item
                 if token["connection"] == "after":
                     if "inserted" not in token or not token["inserted"]:
@@ -150,9 +161,10 @@ class TokenStream(object):
                             # Generating new tree node
                             commentNode = createCommentNode(token)
                             # Attach the new node to current position in tree
-                            if after:
-                                item.addListChild("commentsAfter", commentNode)
-                            else:
+                            #if after:
+                            #    item.addListChild("commentsAfter", commentNode)
+                            #else:
+                            if 1:
                                 item.addChild(commentNode)
 
                             self.eolBefore = False
@@ -201,9 +213,10 @@ class TokenStream(object):
 
                 commentNode = createCommentNode(token)
                 token["inserted"] = True
-                if after:
-                    item.addListChild("commentsAfter", commentNode)
-                else:
+                #if after:
+                #    item.addListChild("commentsAfter", commentNode)
+                #else:
+                if 1:
                     item.addChild(commentNode)
 
             else:
@@ -282,17 +295,16 @@ def raiseSyntaxException (token, expectedDesc = None):
 def createSyntaxTree (tokenArr):
 
     stream = TokenStream(tokenArr)
-    stream.next()
-
-    #from pprint import pprint
-    #pprint([(x['detail'],x['source']) for x in tokenArr])
-    #pprint([x for x in tokenArr if x['type']=="comment"])
 
     rootBlock = tree.Node("file")
     rootBlock.set("file", stream.curr()["id"])
 
     while not stream.finished():
-        rootBlock.addChild(readStatement(stream))
+        if stream.currIsType("comment"):
+            rootBlock.addChild(createCommentNode(stream.curr()))
+            stream.next(rootBlock)
+        else:
+            rootBlock.addChild(readStatement(stream))
 
     # collect prob. pending comments
     for c in stream.commentsBefore: 
@@ -392,6 +404,9 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
             # Something else comes after the variable -> It's a sole variable
             item = oper
 
+    elif stream.currIsType("comment"):
+        item = createCommentNode(stream.curr())
+        stream.next(item)
     elif stream.currIsType("string"):
         item = createItemNode("constant", stream)
         item.set("constantType", "string")
