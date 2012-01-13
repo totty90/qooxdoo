@@ -30,6 +30,7 @@ class Packer(object):
 
     def __init__(self):
         Packer.init_symtab()
+        Packer.oline = 1
 
     # -- class symbol_base -----------------------------------------------------
 
@@ -39,6 +40,12 @@ class Packer(object):
         def emit(cls, node):
             str = u""
             n   = None
+            line = node.get("line", None)
+            if line:
+                if Packer.oline < line:
+                    while Packer.oline < line:
+                        Packer.nl()
+                        Packer.oline += 1
             if node.type in Packer.symbol_table:
                 n = Packer.symbol_table[node.type]()
                 str += n.opening(node)
@@ -1123,6 +1130,13 @@ class Packer(object):
             node = node.parent
 
         return False
+
+    @staticmethod
+    def nl(identchange=0): # TODO duplicates symbol.nl()
+        global indent
+        if identchange:
+            indent += identchange
+        return '\n' + (options.prettypIndentString * indent)
 
     # --------------------------------------------------------------------------
     # -- Interface Methods -----------------------------------------------------
