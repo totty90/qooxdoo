@@ -304,7 +304,7 @@ def createSyntaxTree (tokenArr):
             rootBlock.addChild(createCommentNode(stream.curr()))
             stream.next(rootBlock)
         else:
-            rootBlock.addChild(readStatement(stream))
+            rootBlock.addChild(readStatement(stream, rootBlock))
 
     # collect prob. pending comments
     for c in stream.commentsBefore: 
@@ -314,39 +314,37 @@ def createSyntaxTree (tokenArr):
 
 
 
-def readExpression (stream, **kwargs):
+def readExpression (stream, parent, **kwargs):
     if not 'inStatementList' in kwargs:
         kwargs['inStatementList'] = True  # this means: allow list expressions .. , ..
-    return readStatement(stream, True, **kwargs)
+    return readStatement(stream, parent, True, **kwargs)
 
 
 
-def readStatement (stream, expressionMode = False, overrunSemicolon = True, inStatementList = False):
+def readStatement (stream, parent = None, expressionMode = False, overrunSemicolon = True, inStatementList = False):
     item = None
 
     eolBefore = stream.hadEolBefore()
     breakBefore = stream.hadBreakBefore()
 
-    # print "PROGRESS: %s - %s (%s) [expr=%s]" % (stream.currType(), stream.currDetail(), stream.currLine(), expressionMode)
-
     if currIsIdentifier(stream, True):
         # statement starts with an identifier
         variable = readVariable(stream, True)
-        variable = readObjectOperation(stream, variable)
+        variable = readObjectOperation(stream, variable, variable)
 
         if stream.currIsType("token", ASSIGN_OPERATORS):
             # This is an assignment
             item = createItemNode("assignment", stream)
             item.set("operator", stream.currDetail())
-            stream.next(item)
+            stream.next(parent)
 
             item.addListChild("left", variable)
-            item.addListChild("right", readExpression(stream))
+            item.addListChild("right", readExpression(stream, item))
         elif stream.currIsType("token", "COLON") and not expressionMode:
             # This is a label
             item = variable
             item.type = "label"
-            stream.next(variable)
+            stream.next(parent)
         else:
             # Something else comes after the variable -> It's a sole variable
             item = variable
@@ -359,15 +357,15 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
 
     elif stream.currIsType("reserved", "FUNCTION"):
         item = createItemNode("function", stream)
-        stream.next(item)
+        stream.next(parent)
 
         # Read optional function name
         if stream.currIsType("name") or stream.currIsType("builtin"):
             item.set("name", stream.currSource())
-            stream.next(item)
+            stream.next(parent)
 
         readParamList(item, stream)
-        item.addListChild("body", readBlock(stream))
+        item.addListChild("body", readBlock(stream, item))
 
         # Check for direct execution: function() {}()
         if stream.currIsType("token", "LP"):
@@ -376,20 +374,20 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
             item = createItemNode("call", stream)
             item.addListChild("operand", functionItem)
             readParamList(item, stream)
-            item = readObjectOperation(stream, item)
+            item = readObjectOperation(stream, item, item)
     elif stream.currIsType("reserved", "VOID"):
         item = createItemNode("void", stream)
         item.set("left", True)
-        stream.next(item)
-        item.addListChild("first", readExpression(stream))
+        stream.next(parent)
+        item.addListChild("first", readExpression(stream, item))
     elif stream.currIsType("token", "LP"):
         igroup = createItemNode("group", stream)
-        stream.next(igroup)
-        igroup.addChild(readStatement(stream, expressionMode))
+        stream.next(parent)
+        igroup.addChild(readStatement(stream, igroup, expressionMode))
         #igroup.addChild(readExpression(stream, ))   # -- should be like this, but it doesn't work!?
         stream.expectCurrType("token", "RP")
-        stream.next(igroup, True)
-        oper = readObjectOperation(stream, igroup)
+        stream.next(parent, True)
+        oper = readObjectOperation(stream, igroup, igroup)
 
         # supports e.g. (this.editor.object || this.editor.iframe).style.marginTop = null;
         if stream.currIsType("token", ASSIGN_OPERATORS):
@@ -399,74 +397,74 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
             stream.next(item)
 
             item.addListChild("left", oper)
-            item.addListChild("right", readExpression(stream))
+            item.addListChild("right", readExpression(stream, item))
         else:
             # Something else comes after the variable -> It's a sole variable
             item = oper
 
-    elif stream.currIsType("comment"):
-        item = createCommentNode(stream.curr())
-        stream.next(item)
+    #elif stream.currIsType("comment"):
+    #    item = createCommentNode(stream.curr())
+    #    stream.next(parent)
     elif stream.currIsType("string"):
         item = createItemNode("constant", stream)
         item.set("constantType", "string")
         item.set("value", stream.currSource())
         item.set("detail", stream.currDetail())
-        stream.next(item, True)
+        stream.next(parent, True)
         # This is a member accessor (E.g. "bla.blubb")
-        item = readObjectOperation(stream, item)
+        item = readObjectOperation(stream, item, item)
     elif stream.currIsType("number"):
         item = createItemNode("constant", stream)
         item.set("constantType", "number")
         item.set("value", stream.currSource())
         item.set("detail", stream.currDetail())
-        stream.next(item, True)
+        stream.next(parent, True)
         # This is a member accessor (E.g. "bla.blubb")
-        item = readObjectOperation(stream, item)
+        item = readObjectOperation(stream, item, item)
     elif stream.currIsType("regexp"):
         item = createItemNode("constant", stream)
         item.set("constantType", "regexp")
         item.set("value", stream.currSource())
-        stream.next(item, True)
+        stream.next(parent, True)
         # This is a member accessor (E.g. "bla.blubb")
-        item = readObjectOperation(stream, item)
+        item = readObjectOperation(stream, item, item)
     elif expressionMode and (stream.currIsType("reserved", "TRUE") or stream.currIsType("reserved", "FALSE")):
         item = createItemNode("constant", stream)
         item.set("constantType", "boolean")
         item.set("value", stream.currSource())
-        stream.next(item, True)
+        stream.next(parent, True)
     elif expressionMode and stream.currIsType("reserved", "NULL"):
         item = createItemNode("constant", stream)
         item.set("constantType", "null")
         item.set("value", stream.currSource())
-        stream.next(item, True)
+        stream.next(parent, True)
     elif expressionMode and stream.currIsType("token", "LC"):
-        item = readMap(stream)
+        item = readMap(stream, parent)
         if stream.currIsType("token", "LB") or stream.currIsType("token", "DOT"):  # {...}[] or {...}.___
-            item = readObjectOperation(stream, item)
+            item = readObjectOperation(stream, item, item)
     #elif expressionMode and stream.currIsType("token", "LB"):
     elif stream.currIsType("token", "LB"):
-        item = readArray(stream)
+        item = readArray(stream, parent)
         if stream.currIsType("token", "LB"):
-            item = readObjectOperation(stream, item)
+            item = readObjectOperation(stream, item, item)
     elif stream.currIsType("token", SINGLE_LEFT_OPERATORS):
         item = createItemNode("operation", stream)
         item.set("operator", stream.currDetail())
         item.set("left", True)
-        stream.next(item)
-        item.addListChild("first", readExpression(stream))
+        stream.next(parent)
+        item.addListChild("first", readExpression(stream, item))
     elif stream.currIsType("reserved", "TYPEOF"):
         item = createItemNode("operation", stream)
         item.set("operator", "TYPEOF")
         item.set("left", True)
-        stream.next(item)
-        item.addListChild("first", readExpression(stream))
+        stream.next(parent)
+        item.addListChild("first", readExpression(stream, item))
     elif stream.currIsType("reserved", "NEW"):
-        item = readInstantiation(stream)
-        item = readObjectOperation(stream, item)
+        item = readInstantiation(stream, parent)
+        item = readObjectOperation(stream, item, item)
     elif not expressionMode and stream.currIsType("reserved", "VAR"):
         item = createItemNode("definitionList", stream)
-        stream.next(item)
+        stream.next(parent)
         finished = False
         while not finished:
             if not currIsIdentifier(stream, False):
@@ -474,74 +472,74 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
 
             childitem = createItemNode("definition", stream)
             childitem.set("identifier", stream.currSource())
-            stream.next(childitem)
+            stream.next(item)
             if stream.currIsType("token", "ASSIGN"):
                 assign = createItemNode("assignment", stream)
                 childitem.addChild(assign)
-                stream.next(assign)
-                assign.addChild(readExpression(stream))
+                stream.next(childitem)
+                assign.addChild(readExpression(stream, assign))
 
             item.addChild(childitem)
 
             # Check whether anothe definition follows, e.g. "var a, b=1, c=4"
             if stream.currIsType("token", "COMMA"):
-                stream.next(item)
+                stream.next(parent)
             else:
                 finished = True
 
         stream.comment(item, True)
 
     elif not expressionMode and stream.currIsType("reserved", LOOP_KEYWORDS):
-        item = readLoop(stream)
+        item = readLoop(stream, parent)
     elif not expressionMode and stream.currIsType("reserved", "DO"):
-        item = readDoWhile(stream)
+        item = readDoWhile(stream, parent)
     elif not expressionMode and stream.currIsType("reserved", "SWITCH"):
-        item = readSwitch(stream)
+        item = readSwitch(stream, parent)
     elif not expressionMode and stream.currIsType("reserved", "TRY"):
-        item = readTryCatch(stream)
+        item = readTryCatch(stream, parent)
     elif not expressionMode and stream.currIsType("token", "LC"):
-        item = readBlock(stream)
+        item = readBlock(stream, parent)
     elif not expressionMode and stream.currIsType("reserved", "RETURN"):
         item = createItemNode("return", stream)
-        stream.next(item)
+        stream.next(parent)
         # NOTE: The expression after the return keyword is optional
         if not stream.currIsType("token", "SEMICOLON") and not stream.currIsType("token", "RC"):
-            item.addListChild("expression", readExpression(stream))
+            item.addListChild("expression", readExpression(stream, item))
             stream.comment(item, True)
     elif not expressionMode and stream.currIsType("reserved", "THROW"):
         item = createItemNode("throw", stream)
-        stream.next(item)
-        item.addListChild("expression", readExpression(stream))
+        stream.next(parent)
+        item.addListChild("expression", readExpression(stream, item))
         stream.comment(item, True)
     elif stream.currIsType("reserved", "DELETE"):
         # this covers both statement and expression context!
         item = createItemNode("delete", stream)
         item.set("left", True)
-        stream.next(item)
-        item.addListChild("expression", readExpression(stream))
+        stream.next(parent)
+        item.addListChild("expression", readExpression(stream, item))
         stream.comment(item, True)
     elif not expressionMode and stream.currIsType("reserved", "BREAK"):
         item = createItemNode("break", stream)
-        stream.next(item)
+        stream.next(parent)
         # NOTE: The label after the break keyword is optional
         if not stream.hadEolBefore() and stream.currIsType("name"):
             item.set("label", stream.currSource())
             # As the label is an attribute, we need to put following comments into after
             # to differenciate between comments before and after the label
-            stream.next(item, True)
+            stream.next(parent, True)
     elif not expressionMode and stream.currIsType("reserved", "CONTINUE"):
         item = createItemNode("continue", stream)
-        stream.next(item)
+        stream.next(parent)
         # NOTE: The label after the continue keyword is optional
         if not stream.hadEolBefore() and stream.currIsType("name"):
             item.set("label", stream.currSource())
-            stream.next(item, True)
+            stream.next(parent, True)
 
     if not item:
         if stream.currIsType("token", "SEMICOLON") and not expressionMode:
             # This is an empty statement
             item = createItemNode("emptyStatement", stream)
-            stream.next(item)
+            stream.next(parent)
         else:
             if expressionMode:
                 expectedDesc = "expression"
@@ -563,16 +561,16 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
         item = createItemNode("operation", stream)
         item.addListChild("first", parsedItem)
         item.set("operator", oper)
-        stream.next(item)
+        stream.next(parent)
 
         if oper in MULTI_TOKEN_OPERATORS or oper in MULTI_PROTECTED_OPERATORS:
             # It's a multi operator -> There must be a second argument
-            item.addListChild("second", readExpression(stream))
+            item.addListChild("second", readExpression(stream, item))
             if oper == "HOOK":
                 # It's a "? :" operation -> There must be a third argument
                 stream.expectCurrType("token", "COLON")
-                stream.next(item)
-                item.addListChild("third", readExpression(stream))
+                stream.next(parent)
+                item.addListChild("third", readExpression(stream, item))
 
         # Deep scan on single right operators e.g. if(i-- > 4)
         if oper in SINGLE_RIGHT_OPERATORS and stream.currIsType("token", MULTI_TOKEN_OPERATORS) and expressionMode:
@@ -581,16 +579,16 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
             paritem = createItemNode("operation", stream)
             paritem.addListChild("first", item)
             paritem.set("operator", paroper)
-            stream.next(item)
+            stream.next(parent)
 
             if paroper in MULTI_TOKEN_OPERATORS or paroper in MULTI_PROTECTED_OPERATORS:
                 # It's a multi operator -> There must be a second argument
-                paritem.addListChild("second", readExpression(stream))
+                paritem.addListChild("second", readExpression(stream, paritem))
                 if paroper == "HOOK":
                     # It's a "? :" operation -> There must be a third argument
                     stream.expectCurrType("token", "COLON")
-                    stream.next(item)
-                    paritem.addListChild("third", readExpression(stream))
+                    stream.next(parent)
+                    paritem.addListChild("third", readExpression(stream, paritem))
 
             # return parent item
             item = paritem
@@ -606,15 +604,15 @@ def readStatement (stream, expressionMode = False, overrunSemicolon = True, inSt
             while stream.currIsType("token", "COMMA"):
                 stream.next(expressionList)
                 if expressionMode:
-                    expressionList.addChild(readStatement(stream, True, False, True))
+                    expressionList.addChild(readStatement(stream, expressionList, True, False, True))
                 else:
-                    expressionList.addChild(readStatement(stream, False, False, True))
+                    expressionList.addChild(readStatement(stream, expressionList, False, False, True))
             item = expressionList
 
     # go over the optional semicolon
     if  stream.currIsType("token", "SEMICOLON") and not expressionMode and overrunSemicolon:
         advanced = True
-        stream.next(item, True)
+        stream.next(parent, True)
 
     #if expressionMode and not advanced: # we have an item but couldn't use the next token in stream
     if expressionMode and stream.currType() in ATOMS : # we have an item but couldn't use the next token in stream
@@ -649,17 +647,17 @@ def readVariable (stream, allowArrays):
 
         identifier = createItemNode("identifier", stream)
         identifier.set("name", stream.currSource())
-        stream.next(identifier)
+        stream.next(item)
 
         if allowArrays:
             while stream.currIsType("token", "LB"):
                 accessor = createItemNode("accessor", stream)
-                stream.next(accessor)
+                stream.next(item)
                 accessor.addChild(identifier)
-                accessor.addListChild("key", readExpression(stream))
+                accessor.addListChild("key", readExpression(stream, accessor))
 
                 stream.expectCurrType("token", "RB")
-                stream.next(accessor, True)
+                stream.next(item, True)
 
                 identifier = accessor
 
@@ -676,36 +674,36 @@ def readVariable (stream, allowArrays):
 
 
 
-def readObjectOperation(stream, operand, onlyAllowMemberAccess = False):
+def readObjectOperation(stream, operand, parent = None, onlyAllowMemberAccess = False):
     if stream.currIsType("token", "DOT"):
         # This is a member accessor (E.g. "bla.blubb")
         item = createItemNode("accessor", stream)
-        stream.next(item)
+        stream.next(parent)
         item.addListChild("left", operand)
 
         # special mode for constants which should be assigned to an accessor first
         if operand.type == "constant":
             item.addListChild("right", readVariable(stream, False))
-            item = readObjectOperation(stream, item)
+            item = readObjectOperation(stream, item, item)
         else:
-            item.addListChild("right", readObjectOperation(stream, readVariable(stream, False)))
+            item.addListChild("right", readObjectOperation(stream, readVariable(stream, False), item))
 
     elif stream.currIsType("token", "LP"):
         # This is a function call (E.g. "bla(...)")
         item = createItemNode("call", stream)
         item.addListChild("operand", operand)
         readParamList(item, stream)
-        item = readObjectOperation(stream, item)
+        item = readObjectOperation(stream, item, item)
     elif stream.currIsType("token", "LB"):
         # This is an array access (E.g. "bla[...]")
         item = createItemNode("accessor", stream)
-        stream.next(item)
+        stream.next(parent)
         item.addListChild("identifier", operand)
-        item.addListChild("key", readExpression(stream))
+        item.addListChild("key", readExpression(stream, item))
 
         stream.expectCurrType("token", "RB")
-        stream.next(item, True)
-        item = readObjectOperation(stream, item)
+        stream.next(parent, True)
+        item = readObjectOperation(stream, item, item)
     else:
         item = operand
 
@@ -735,9 +733,9 @@ def readParamList (node, stream):
             firstParam = False
         else:
             stream.expectCurrType("token", "COMMA")
-            stream.next(lastExpr, True)
+            stream.next(params, True)
 
-        lastExpr = readExpression(stream)
+        lastExpr = readExpression(stream, params)
         params.addChild(lastExpr)
 
     # Has an end defined by the loop above
@@ -754,14 +752,14 @@ def readParamList (node, stream):
 # @param     stream   TokenStream to parse
 # @return             tokenizer.token - next item after the closing \"}\"
 #
-def readBlock(stream):
+def readBlock(stream, parent = None):
     stream.expectCurrType("token", "LC")
     item = createItemNode("block", stream)
 
     # Iterate through children
-    stream.next(item)
+    stream.next(parent)
     while not stream.currIsType("token", "RC"):
-        item.addChild(readStatement(stream))
+        item.addChild(readStatement(stream, item))
 
     # Has an end defined by the loop above
     # This means that all comments following are after item
@@ -770,11 +768,11 @@ def readBlock(stream):
     return item
 
 
-def readMap(stream):
+def readMap(stream, parent = None):
     stream.expectCurrType("token", "LC")
 
     item = createItemNode("map", stream)
-    stream.next(item)
+    stream.next(parent)
 
     # NOTE: We use our own flag for checking whether the array already has entries
     #       and not item.hasChildren(), because item.hasChildren() is also true
@@ -795,10 +793,10 @@ def readMap(stream):
         if stream.currIsType("string"):
             keyvalue.set("quote", stream.currDetail())
 
-        stream.next(keyvalue)
+        stream.next(item)
         stream.expectCurrType("token", "COLON")
-        stream.next(keyvalue, True)
-        keyvalue.addListChild("value", readExpression(stream))
+        stream.next(item, True)
+        keyvalue.addListChild("value", readExpression(stream, keyvalue))
 
         item.addChild(keyvalue)
 
@@ -812,11 +810,11 @@ def readMap(stream):
 
 
 
-def readArray(stream):
+def readArray(stream, parent=None):
     stream.expectCurrType("token", "LB")
 
     item = createItemNode("array", stream)
-    stream.next(item)
+    stream.next(parent)
 
     # NOTE: We use our own flag for checking whether the array already has entries
     #       and not item.hasChildren(), because item.hasChildren() is also true
@@ -827,7 +825,7 @@ def readArray(stream):
             stream.expectCurrType("token", "COMMA")
             stream.next(item)
 
-        item.addChild(readExpression(stream))
+        item.addChild(readExpression(stream, item))
         hasEntries = True
 
     # Has an end defined by the loop above
@@ -835,28 +833,28 @@ def readArray(stream):
     stream.next(item, True)
 
     # Support constructs like ["foo", "bar" ].join("")
-    item = readObjectOperation(stream, item)
+    item = readObjectOperation(stream, item, item)
 
     return item
 
 
 
-def readInstantiation(stream):
+def readInstantiation(stream, parent=None):
     stream.expectCurrType("reserved", "NEW")
 
     item = createItemNode("instantiation", stream)
-    stream.next(item)
+    stream.next(parent)
 
     # Could be a simple variable or a just-in-time function declaration (closure)
     # Read this as expression
-    stmnt = readStatement(stream, True, False, True)
+    stmnt = readStatement(stream, item, True, False, True)
     item.addListChild("expression", stmnt)
 
     return item
 
 
 
-def readLoop(stream):
+def readLoop(stream, parent=None):
     stream.expectCurrType("reserved", LOOP_KEYWORDS)
 
     loopType = stream.currDetail()
@@ -864,7 +862,7 @@ def readLoop(stream):
     item = createItemNode("loop", stream)
     item.set("loopType", loopType)
 
-    stream.next(item)
+    stream.next(parent)
     stream.expectCurrType("token", "LP")
 
     if loopType == "FOR":
@@ -874,7 +872,7 @@ def readLoop(stream):
             # Read the optional first statement
             first = createItemNode("first", stream)
             item.addChild(first)
-            first.addChild(readStatement(stream, expressionMode=False, overrunSemicolon=False))
+            first.addChild(readStatement(stream, first, expressionMode=False, overrunSemicolon=False))
             stream.comment(first, True)
 
         if stream.currIsType("token", "SEMICOLON"):
@@ -886,7 +884,7 @@ def readLoop(stream):
                 # Read the optional second expression
                 second = createItemNode("second", stream)
                 item.addChild(second)
-                second.addChild(readStatement(stream, expressionMode=True, inStatementList=False))
+                second.addChild(readStatement(stream, second, expressionMode=True, inStatementList=False))
                 stream.comment(second, True)
 
             stream.expectCurrType("token", "SEMICOLON")
@@ -896,7 +894,7 @@ def readLoop(stream):
                 # Read the optional third statement
                 third = createItemNode("third", stream)
                 item.addChild(third)
-                third.addChild(readStatement(stream, expressionMode=False, overrunSemicolon=False))
+                third.addChild(readStatement(stream, third, expressionMode=False, overrunSemicolon=False))
                 stream.comment(third, True)
 
         elif stream.currIsType("token", "RP"):
@@ -911,8 +909,8 @@ def readLoop(stream):
 
     else:
         expr = createItemNode("expression", stream)
-        stream.next(expr)
-        expr.addChild(readExpression(stream))
+        stream.next(parent)
+        expr.addChild(readExpression(stream, expr))
         item.addChild(expr)
         stream.comment(expr, True)
         stream.expectCurrType("token", "RP")
@@ -920,40 +918,40 @@ def readLoop(stream):
     # comments should be already completed from the above code
     stmnt = createItemNode("statement", stream)
     item.addChild(stmnt)
-    stream.next()
-    stmnt.addChild(readStatement(stream))
+    stream.next(parent)
+    stmnt.addChild(readStatement(stream, stmnt))
 
     if loopType == "IF" and stream.currIsType("reserved", "ELSE"):
         elseStmnt = createItemNode("elseStatement", stream)
         item.addChild(elseStmnt)
-        stream.next(elseStmnt)
-        elseStmnt.addChild(readStatement(stream))
+        stream.next(item)
+        elseStmnt.addChild(readStatement(stream, elseStmnt))
 
     return item
 
 
 
-def readDoWhile(stream):
+def readDoWhile(stream, parent=None):
     stream.expectCurrType("reserved", "DO")
 
     item = createItemNode("loop", stream)
     item.set("loopType", "DO")
-    stream.next(item)
+    stream.next(parent)
 
     stmnt = createItemNode("statement", stream)
     item.addChild(stmnt)
-    stmnt.addChild(readStatement(stream))
+    stmnt.addChild(readStatement(stream, stmnt))
 
     stream.expectCurrType("reserved", "WHILE")
-    stream.next(item)
+    stream.next(parent)
 
     stream.expectCurrType("token", "LP")
 
     expr = createItemNode("expression", stream)
     item.addChild(expr)
-    stream.next(expr)
+    stream.next(item)
 
-    expr.addChild(readExpression(stream))
+    expr.addChild(readExpression(stream, expr))
 
     stream.expectCurrType("token", "RP")
     stream.next(item, True)
@@ -961,83 +959,83 @@ def readDoWhile(stream):
     return item
 
 
-def readSwitch(stream):
+def readSwitch(stream, parent=None):
     stream.expectCurrType("reserved", "SWITCH")
 
     item = createItemNode("switch", stream)
     item.set("switchType", "case")
 
-    stream.next(item)
+    stream.next(parent)
     stream.expectCurrType("token", "LP")
 
     expr = createItemNode("expression", stream)
-    stream.next(expr)
+    stream.next(item)
     item.addChild(expr)
-    expr.addChild(readExpression(stream))
+    expr.addChild(readExpression(stream, expr))
 
     stream.expectCurrType("token", "RP")
-    stream.next(expr, True)
+    stream.next(item, True)
 
     stream.expectCurrType("token", "LC")
     stmnt = createItemNode("statement", stream)
     item.addChild(stmnt)
-    stream.next(stmnt)
+    stream.next(item)
 
     while not stream.currIsType("token", "RC"):
         if stream.currIsType("reserved", "CASE"):
             caseItem = createItemNode("case", stream)
-            stream.next(caseItem)
-            caseItem.addListChild("expression", readExpression(stream))
+            stream.next(stmnt)
+            caseItem.addListChild("expression", readExpression(stream, caseItem))
             stmnt.addChild(caseItem)
 
             stream.expectCurrType("token", "COLON")
-            stream.next(caseItem, True)
+            stream.next(stmnt, True)
 
         elif stream.currIsType("reserved", "DEFAULT"):
             defaultItem = createItemNode("default", stream)
             stmnt.addChild(defaultItem)
-            stream.next(defaultItem)
+            stream.next(stmnt)
 
             stream.expectCurrType("token", "COLON")
-            stream.next(defaultItem, True)
+            stream.next(stmnt, True)
 
         else:
             raiseSyntaxException(stream.curr(), "case or default")
 
         while not stream.currIsType("token", "RC") and not stream.currIsType("reserved", "CASE") and not stream.currIsType("reserved", "DEFAULT"):
-            stmnt.addChild(readStatement(stream))
+            stmnt.addChild(readStatement(stream, stmnt))
 
-    stream.next(stmnt, True)
+    stream.next(item, True)
 
     return item
 
 
-def readTryCatch(stream):
+def readTryCatch(stream, parent=None):
     stream.expectCurrType("reserved", "TRY")
 
     item = createItemNode("switch", stream)
     item.set("switchType", "catch")
-    stream.next(item)
+    stream.next(parent)
 
-    item.addListChild("statement", readStatement(stream))
+    item.addListChild("statement", readStatement(stream, item))
 
     while stream.currIsType("reserved", "CATCH"):
         catchItem = createItemNode("catch", stream)
-        stream.next(catchItem)
+        stream.next(item)
 
         stream.expectCurrType("token", "LP")
 
         exprItem = createItemNode("expression", stream)
         catchItem.addChild(exprItem)
-        stream.next(exprItem)
-        exprItem.addChild(readExpression(stream))
+        stream.next(catchItem)
+        exprItem.addChild(readExpression(stream, exprItem))
 
         stream.expectCurrType("token", "RP")
-        stream.next(exprItem, True)
+        stream.next(catchItem, True)
 
         stmnt = createItemNode("statement", stream)
         catchItem.addChild(stmnt)
-        stmnt.addChild(readStatement(stream))
+        stmnt.addChild(readStatement(stream, stmnt))
 
         item.addChild(catchItem)
 
@@ -1047,7 +1045,7 @@ def readTryCatch(stream):
 
         stmnt = createItemNode("statement", stream)
         finallyItem.addChild(stmnt)
-        stmnt.addChild(readStatement(stream))
+        stmnt.addChild(readStatement(stream, stmnt))
 
         item.addChild(finallyItem)
 

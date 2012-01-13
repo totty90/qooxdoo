@@ -81,6 +81,14 @@ class Packer(object):
 
             return str
 
+        ##
+        # Newline and indent
+        def nl(s, identchange=0):
+            global indent
+            if identchange:
+                indent += identchange
+            return '\n' + (options.prettypIndentString * indent)
+
         # tokens -> string
         def opening(self, node):
             raise NotImplementedError("You need to override 'opening' method")
@@ -177,11 +185,13 @@ class Packer(object):
 
         @method(symbol("block"))
         def opening(s, node):
-            return cls.write("{")
+            #return cls.write("{")
+            return s.nl() + "{" + s.nl(1)
 
         @method(symbol("block"))
         def closing(s, node):
-            return cls.write("}")
+            #return cls.write("}")
+            return s.nl(-1) + "}"
 
 
         symbol("break")
@@ -242,8 +252,12 @@ class Packer(object):
 
         @method(symbol("comment"))
         def opening(s, node):
-            r = node.get('text')
-            r += '\n'
+            r = u''
+            if node.get('multiline', False):
+                r += '\n'
+            r += node.get('text')
+            r = Comment.Text(r).indent(options.prettypIndentString * indent)
+            r += s.nl()
             return r
 
         @method(symbol("comment"))
@@ -438,7 +452,7 @@ class Packer(object):
             if node.parent.type == "loop":
                 r += cls.write(")")
 
-                # e.g. a if-construct without a block {}
+                # e.g. an if-construct without a block {}
                 if node.parent.getChild("statement").hasChild("block"):
                     pass
 
@@ -713,12 +727,12 @@ class Packer(object):
         @method(symbol("map"))
         def opening(s, node):
             r = u''
-            r += cls.write("{")
+            r += s.nl() + "{" + s.nl(1)
             return r
 
         @method(symbol("map"))
         def closing(s, node):
-            return cls.write("}")
+            return s.nl(-1) + "}"
 
 
         symbol("operand")
@@ -1169,6 +1183,10 @@ class Packer(object):
         afterArea    = False
 
         return [ Packer.symbol_base.emit(node) ]  # caller expects []
+
+
+# -- end:Packer() --------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def prettyNode(tree, options, result):
