@@ -865,7 +865,8 @@ Triggers code beautification of source class files (in-place-editing). An empty 
   {
     "general" :
     {
-      "indent-string"        : "  "
+      "indent-string"        : "  ",
+      "text-width"           : 80
     },
     "comments" :
     {
@@ -886,8 +887,15 @@ Triggers code beautification of source class files (in-place-editing). An empty 
       "open-curly" :
       {
         "newline-before"     : "m",
+        "newline-after"      : true,  // to fix bug#5963
         "indent-before"      : false
-      }
+      },
+      "close-curly" :
+      {
+        "newline-before"     : true,  // to fix bug#5963
+        "indent-before"      : false, // ??? is this necessary (should align with opening curly!?)
+      },
+      "keep-line-breaks"     : true   // 
     }
   }
 
@@ -900,6 +908,7 @@ Keys are:
 * **general** : General settings.
 
   * **indent-string** : "<whitespace_string>", e.g. "\t" for tab (default: "  " (2 spaces))
+  * **text-width** : (integer) max. width to keep for a code line, if possible; does currently not re-format comments. (default: undef)
 
 * **comments** : Settings for pretty-printing comments.
 
@@ -919,7 +928,16 @@ Keys are:
   * **open-curly** : Settings for the opening curly brace '{'.
 
     * **newline-before** : "([aA]|[nN]|[mM])" Whether to insert a line break before the opening curly always (aA), never (nN) or mixed (mM) depending on block complexity (default: "m")
+    * **newline-after** : (true|false) Whether to insert a line break after the opening curly (default: true)
     * **indent-before** : (true|false) Whether to indent the opening curly if it is on a new line (default: false)
+
+  * **close-curly** : Settings for the closing curly brace '}'.
+
+    * **newline-before** : (true|false) Whether to insert a line break before the closing curly (default: true)
+    * **indent-before** : (true|false) Whether to indent the closing curly if it is on a new line (default: false)
+
+  * **keep-line-breaks** : (true|false) Keep existing line breaks between statements and within expressions. If true, pretty-printing will not insert empty lines between statements, nor remove them. If an expression is broken up over multiple lines, this distribution will be retained, also with empty lines if they exist, and only indentation adjusted. (default: true)
+
 
 .. _pages/tool/generator_config_ref#provider:
 
